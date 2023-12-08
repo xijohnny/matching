@@ -156,8 +156,8 @@ class MatchingProbe(LightningModule):
         pass
 
     def setup(self, stage:str):
-        test_loader = self.trainer.datamodule.test_dataloader()
-        batch1, batch2, _ = next(iter(test_loader))
+        loader = self.trainer.datamodule.val_dataloader()
+        batch1, batch2, _ = next(iter(loader))
         num_input = batch1.shape[1]
         num_output = batch2.shape[1]
         self.probe = nn.Sequential(nn.Linear(num_input, num_input * 2),
@@ -166,21 +166,19 @@ class MatchingProbe(LightningModule):
                         nn.Linear(num_input * 2, num_output))
         
         ## match the data before training to modify the dataset, or do nothing if ground truth
-        
         if self.embedding == "gt":
             if self.unbiased:
-                self.trainer.datamodule.train_dataset = GEXADTDataset_Double(self.trainer.datamodule.train_data_adt, 
-                                                                      self.trainer.datamodule.train_data_adt.clone(),
-                                                                      self.trainer.datamodule.train_data_gex,
-                                                                      self.trainer.datamodule.train_labels)
+                self.trainer.datamodule.train_dataset = GEXADTDataset_Double(self.trainer.datamodule.train_df_mod1, 
+                                                                      self.trainer.datamodule.train_df_mod1.copy(deep = True),
+                                                                      self.trainer.datamodule.train_df_mod2)
             return None
         
         
         with torch.no_grad():
-            x1 = self.trainer.datamodule.train_data_adt.to("cuda")
-            x2 = self.trainer.datamodule.train_data_gex.to("cuda")
+            x1 = self.trainer.datamodule.train_dataset.mod1_tensor.to("cuda")
+            x2 = self.trainer.datamodule.train_dataset.mod2_tensor.to("cuda")
             if self.unbiased: x1_clone = torch.zeros_like(x1).to("cuda")
-            y = self.trainer.datamodule.train_labels.to("cuda")
+            y = self.trainer.datamodule.train_dataset.label_tensor.to("cuda")
             for label in torch.unique(y):
                 subset = y == label
                 x1_, x2_ = x1[subset].clone(), x2[subset].clone()
@@ -189,19 +187,18 @@ class MatchingProbe(LightningModule):
                     match1, match2 = self.embedding(x1_, x2_)
                     coupling = eot_matching(match1, match2)
                 if self.embedding == "random":
-                    coupling = torch.full((x2_.shape[0], x2_.shape[0]), torch.tensor(1/x2_.shape[0]), device = "cuda") ## 1/n in coupling matrix everywhere
+                    coupling = torch.full((x1_.shape[0], x1_.shape[0]), torch.tensor(1/x1_.shape[0]), device = "cuda") ## 1/n in coupling matrix everywhere
                 idx = torch.multinomial(torch.t(coupling), num_samples = 1)  ## remove torch.t to sample from x2 instead
-                x1_clone_1 = (x1_.clone())[torch.flatten(idx)].view(x1_.size())
-                x1[subset] = x1_clone_1
+                x1[subset] = (x1_.clone())[torch.flatten(idx)].view(x1_.size())
                 if self.unbiased: 
                     idx = torch.multinomial(torch.t(coupling), num_samples = 1)
-                    x1_clone_2 = (x1_.clone())[torch.flatten(idx)].view(x1_.size())
-                    x1_clone[subset] = x1_clone_2
+                    x1_clone[subset]  = (x1_.clone())[torch.flatten(idx)].view(x1_.size())
 
         if self.unbiased:
-            self.trainer.datamodule.train_dataset = GEXADTDataset_Double(x1.to("cpu"), x1_clone.to("cpu"), x2.to("cpu"), y.to("cpu"))      
+            self.trainer.datamodule.train_dataset.mod1_tensor = x1.to("cpu")
+            self.trainer.datamodule.train_dataset.mod1_tensor_2 = x1_clone.to("cpu")
         else:
-            self.trainer.datamodule.train_dataset = GEXADTDataset(x1.to("cpu"), x2.to("cpu"), y.to("cpu"))
+            self.trainer.datamodule.train_dataset.mod1_tensor = x1.to("cpu")
         
     def on_train_epoch_end(self):
         pass

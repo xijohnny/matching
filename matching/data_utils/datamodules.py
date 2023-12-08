@@ -7,7 +7,6 @@ from torchvision import transforms
 from .. import convert_to_labels
 from typing import Tuple, Optional
 
-
 ## Normalization statistics, channel means and sd
 
 ## These are for old data with no background, largely unused
@@ -126,14 +125,16 @@ class NoisyBallsDataModule(BallsDataModule):
     def prepare_data(self):
         self.data_dir = "/mnt/ps/home/CORP/johnny.xi/sandbox/matching/data/datasets/noisyballs_scm_non_linear/intervention/"
 
-class GEXADTDataModule(LightningDataModule):
+class MatchedDataModule(LightningDataModule):
+    """
+    Base multimodal datamodule for a matching for which. This class ensures minimal errors by loading all indices together, but cannot be used 
+    before a matching exists. 
+    """
     def __init__(self,
-        batch_size: int = 256,
-        d1_sub: bool = False):
-
+        batch_size: int = 256):
         super().__init__()
         self.batch_size = batch_size
-        self.d1_sub = d1_sub ## Give option to subset the data to donor 1 
+
 
     def _train_val_split_df(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         if "split" not in df.columns:
@@ -148,11 +149,42 @@ class GEXADTDataModule(LightningDataModule):
             test_df = df[test_idx].reset_index()
         else:                                                                               
             df = df.reset_index()
-            train_df = df[:round(len(df)*0.8)].reset_index()
-            val_df = df[round(len(df)*0.8):round(len(df)*0.9)].reset_index()
-            test_df = df[round(len(df)*0.9):].reset_index()
+            random = np.random.rand(len(df))
+
+            train_df = df[random < 0.8].reset_index()
+            val_df = df[(random > 0.8) & (random < 0.9)].reset_index()
+            test_df = df[random > 0.9].reset_index()
 
         return train_df, val_df, test_df
+
+    def load_data(self) -> Tuple[Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame], Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+        raise NotImplementedError
+
+    def setup(self, stage: str) -> None:
+
+        (train_df_mod1, val_df_mod1, test_df_mod1), (train_df_mod2, val_df_mod2, test_df_mod2)  = self.load_data()
+
+        self.train_dataset = self.dataset(train_df_mod1, train_df_mod2)
+        self.val_dataset = self.dataset(val_df_mod1, val_df_mod2)
+
+        if stage == "test":
+            self.test_dataset = self.dataset(test_df_mod1, test_df_mod2)   
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(self.train_dataset, batch_size = self.batch_size, shuffle = True, num_workers=8)
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(self.val_dataset, batch_size = self.batch_size, num_workers=8)
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(self.test_dataset, batch_size = self.batch_size, num_workers=8)
+
+class GEXADTDataModule(MatchedDataModule):
+    def __init__(self,
+        batch_size: int = 256,
+        d1_sub: bool = False):
+
+        super().__init__(batch_size)
+        self.d1_sub = d1_sub ## Give option to subset the data to donor 1 
+        self.dataset = GEXADTDataset
 
     def load_data(self) -> Tuple[Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame], Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
         data_adt = pd.read_parquet("/mnt/ps/home/CORP/johnny.xi/sandbox/matching/data/datasets/neurips_2021_bm/adt.parquet") 
@@ -166,7 +198,16 @@ class GEXADTDataModule(LightningDataModule):
             data_gex.CT_id = data_gex.cell_type.cat.remove_unused_categories().cat.codes
 
         return self._train_val_split_df(data_adt), self._train_val_split_df(data_gex)
-    
+
+class GEXADTDataset(Dataset):
+    def __init__(self, 
+                 data_adt: pd.DataFrame, 
+                 data_gex: pd.DataFrame):
+         
+         super().__init__()
+         self.mod1_tensor, self.label_tensor = self.df_to_torch(data_adt)
+         self.mod2_tensor, _ = self.df_to_torch(data_gex)
+
     def df_to_torch(self, df: pd.DataFrame) -> Tuple[torch.Tensor, torch.Tensor]:
          df.columns = df.columns.astype(str)
          label_tensor = torch.tensor(df["CT_id"]).long()
@@ -175,74 +216,34 @@ class GEXADTDataModule(LightningDataModule):
 
          return dat_tensor, label_tensor
 
-
-    def setup(self, stage: str) -> None:
-
-        (train_df_adt, val_df_adt, test_df_adt), (train_df_gex, val_df_gex, test_df_gex)  = self.load_data()
-
-        self.train_data_adt, self.train_labels = self.df_to_torch(train_df_adt)
-        self.val_data_adt, self.val_labels = self.df_to_torch(val_df_adt)
-
-        self.train_data_gex, _ = self.df_to_torch(train_df_gex)
-        self.val_data_gex, _ = self.df_to_torch(val_df_gex)
-
-        self.train_dataset = GEXADTDataset(self.train_data_adt, self.train_data_gex, self.train_labels)
-        self.val_dataset = GEXADTDataset(self.val_data_adt, self.val_data_gex, self.val_labels)
-
-
-        ## We need these in train mode as well for probing
-        self.test_data_adt, self.test_labels = self.df_to_torch(test_df_adt)
-        self.test_data_gex, _ = self.df_to_torch(test_df_gex)
-        self.test_dataset = GEXADTDataset(self.test_data_adt, self.test_data_gex, self.test_labels)   
-
-
-
-    def train_dataloader(self) -> DataLoader:
-        print("train dataloader")
-        return DataLoader(self.train_dataset, batch_size = self.batch_size, shuffle = True, num_workers=8)
-    def val_dataloader(self) -> DataLoader:
-        return DataLoader(self.val_dataset, batch_size = self.batch_size, num_workers=8)
-    def test_dataloader(self) -> DataLoader:
-        return DataLoader(self.test_dataset, batch_size = self.batch_size, num_workers=8)
-class GEXADTDataset(Dataset):
-    def __init__(self, 
-                 data_adt: torch.Tensor, 
-                 data_gex: torch.Tensor, 
-                 labels: torch.Tensor):
-         super().__init__()
-         self.adt_tensor = data_adt
-         self.gex_tensor = data_gex
-         self.label_tensor = labels
-
     def __len__(self):
-         return len(self.adt_tensor)
+         return len(self.mod1_tensor)
 
     def __getitem__(self, index: int):
-        adt_row = self.adt_tensor[index,:]
-        gex_row = self.gex_tensor[index,:]
+        mod1_row = self.mod1_tensor[index,:]
+        mod2_row = self.mod2_tensor[index,:]
         lab = self.label_tensor[index]
 
-        return adt_row, gex_row, lab ## x1, x2, y
+        return mod1_row, mod2_row, lab ## x1, x2, y
 
 class GEXADTDataset_Double(GEXADTDataset):
     """
     Loading two samples from GEX modality for 2SLS loss
     """
     def __init__(self, 
-                 data_adt: torch.Tensor, 
-                 data_adt_2: torch.Tensor, 
-                 data_gex: torch.Tensor, 
-                 labels: torch.Tensor):
-         super().__init__(data_adt, data_gex, labels)
-         self.adt_tensor_2 = data_adt_2
+                 data_adt: pd.DataFrame, 
+                 data_adt_2: pd.DataFrame, 
+                 data_gex: pd.DataFrame):
+         super().__init__(data_adt, data_gex)
+         self.mod1_tensor_2, _ = self.df_to_torch(data_adt_2)
 
     def __getitem__(self, index: int):
-        adt_row = self.adt_tensor[index,:]
-        adt_row_2 = self.adt_tensor_2[index,:]
-        gex_row_2 = self.gex_tensor[index,:]
+        mod1_row = self.mod1_tensor[index,:]
+        mod1_row_2 = self.mod1_tensor_2[index,:]
+        mod2_row = self.mod2_tensor[index,:]
         lab = self.label_tensor[index]
 
-        return adt_row, adt_row_2, gex_row_2, lab ## x1, x1(2), x2, y
+        return mod1_row, mod1_row_2, mod2_row, lab ## x1, x1(2), x2, y
      
 
 
