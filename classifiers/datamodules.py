@@ -9,7 +9,6 @@ import zarr
 import itertools
 
 import sys
-sys.path.insert(1, "/mnt/ps/home/CORP/johnny.xi/sandbox/photosynthetic")  ### replace with your photosynthetic
 from .transforms import ZarrRandomCrop
 
 

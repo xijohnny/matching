@@ -75,7 +75,6 @@ class BaseClassifier(LightningModule):
         return [optimizer], [{"scheduler": scheduler, "interval": "epoch"}]
     
 
-
 class ImageEncoder(torch.nn.Module):
     def __init__(self, n_hidden: int = 1024):
         super(ImageEncoder, self).__init__()        
