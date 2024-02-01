@@ -14,7 +14,7 @@ from matching.data_utils.datamodules import GEXADTDataModule
 import warnings
 warnings.filterwarnings('ignore')
 
-cite = sc.read("/scratch/st-benbr-1/xijohnny/matching/data/raw/GSE194122_openproblems_neurips2021_cite_BMMC_processed.h5ad")
+cite = sc.read("/path/to/matching/data/raw/GSE194122_openproblems_neurips2021_cite_BMMC_processed.h5ad")
 
 adt_ad = cite[:,cite.var.feature_types == "ADT"]
 gex_ad = cite[:,cite.var.feature_types == "GEX"]

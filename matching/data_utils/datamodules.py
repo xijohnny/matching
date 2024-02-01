@@ -94,7 +94,7 @@ class BallsDataModule(LightningDataModule):
         self.batch_size = batch_size
         self.dataset = BallsDataset
     def prepare_data(self):
-        self.data_dir = "/scratch/st-benbr-1/xijohnny/matching/data/datasets/balls_scm_non_linear/intervention/"
+        self.data_dir = "path/to/matching/data/datasets/balls_scm_non_linear/intervention/"  ## anonymized
     def setup(self, stage: str):
         self.x1_tr = np.load(self.data_dir +  'train_' + 'x1' + '.npy')
         self.x2_tr = np.load(self.data_dir +  'train_' + 'x2' + '.npy')
@@ -124,7 +124,7 @@ class NoisyBallsDataModule(BallsDataModule):
         super().__init__(**kwargs)
         self.dataset = NoisyBallsDataset
     def prepare_data(self):
-        self.data_dir = "/scratch/st-benbr-1/xijohnny/matching/data/datasets/noisyballs_scm_non_linear/intervention/"
+        self.data_dir = "/path/to/matching/data/datasets/noisyballs_scm_non_linear/intervention/"
 
 class GEXADTDataModule(LightningDataModule):
     def __init__(self,
@@ -157,8 +157,8 @@ class GEXADTDataModule(LightningDataModule):
         return train_df, val_df, test_df
 
     def load_data(self) -> Tuple[Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame], Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
-        data_adt = pd.read_parquet("/scratch/st-benbr-1/xijohnny/matching/data/datasets/neurips_2021_bm/adt.parquet") 
-        data_gex = pd.read_parquet("/scratch/st-benbr-1/xijohnny/matching/data/datasets/neurips_2021_bm/gex_pca_200.parquet") 
+        data_adt = pd.read_parquet("/path/to/matching/data/datasets/neurips_2021_bm/adt.parquet") 
+        data_gex = pd.read_parquet("/path/to/matching/data/datasets/neurips_2021_bm/gex_pca_200.parquet") 
 
         if self.d1_sub:
             d1 = ["s1d1", "s1d2", "s1d3"]

@@ -9,7 +9,7 @@ import sys
 from .models.classifier import BallsClassifier, GEXADT_Classifier
 from .models.vae import ImageVAEModule, GEXADTVAEModule
 
-sys.path.insert(1, "/scratch/st-benbr-1/xijohnny/matching/scot/src")
+sys.path.insert(1, "/path/to/matching/scot/src")
 from scotv1 import *
 from evals import *
 from timeit import default_timer as timer
